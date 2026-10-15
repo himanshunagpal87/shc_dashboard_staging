@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Shivwik Holistic Care — Clinic Dashboard</title>
+<title>STAGING — Shivwik Clinic Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
@@ -237,6 +237,46 @@
   .bar-track { width:100%; max-width:34px; height:140px; background:var(--surface); border:1px solid var(--border); border-radius:6px; display:flex; align-items:flex-end; overflow:hidden; }
   .bar-fill { width:100%; background:var(--accent); border-radius:6px 6px 0 0; transition:height .2s ease; min-height:2px; }
   .bar-label { font-size:10.5px; color:var(--text-muted); margin-top:6px; text-align:center; }
+
+  /* ---------- CHATS (shared inbox) ---------- */
+  .chat-wrap { display:flex; height:calc(100dvh - 140px); min-height:420px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .chat-list { width:330px; flex-shrink:0; border-right:1px solid var(--border); display:flex; flex-direction:column; }
+  .chat-list-head { padding:12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px; }
+  .chat-list-head .search-box { width:100%; }
+  .chat-filter { display:flex; gap:6px; }
+  .chat-filter button { flex:1; }
+  .chat-filter button.active { background:var(--accent-glow); color:var(--accent-light); border-color:var(--accent); }
+  .chat-items { flex:1; overflow-y:auto; }
+  .chat-item { display:flex; gap:10px; padding:11px 12px; border-bottom:1px solid var(--border); cursor:pointer; align-items:center; }
+  .chat-item:hover { background:var(--card-hover); }
+  .chat-item.active { background:var(--accent-glow); }
+  .chat-item-main { flex:1; min-width:0; }
+  .chat-item-top { display:flex; justify-content:space-between; gap:8px; }
+  .chat-item-name { font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-item-time { font-size:11px; color:var(--text-muted); flex-shrink:0; }
+  .chat-item-preview { font-size:12.5px; color:var(--text-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .chat-unread { background:var(--green); color:#04231f; font-size:10.5px; font-weight:700; border-radius:20px; padding:1px 7px; flex-shrink:0; }
+  .chat-thread { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .chat-thread-head { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+  .chat-thread-head .back { display:none; }
+  .chat-thread-title { flex:1; min-width:0; }
+  @media (max-width:1200px) { .chat-btn-label { display:none; } }
+  .chat-messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:6px; background:var(--surface); }
+  .chat-day { align-self:center; font-size:11px; color:var(--text-muted); background:var(--card); border:1px solid var(--border); border-radius:20px; padding:2px 10px; margin:8px 0; }
+  .bubble { max-width:72%; padding:8px 11px 5px; border-radius:10px; font-size:13.5px; line-height:1.4; white-space:pre-wrap; word-break:break-word; }
+  .bubble.in { align-self:flex-start; background:var(--card); border:1px solid var(--border); border-top-left-radius:2px; }
+  .bubble.out { align-self:flex-end; background:rgba(20,184,166,0.18); border:1px solid rgba(20,184,166,0.35); border-top-right-radius:2px; }
+  .bubble-meta { font-size:10.5px; color:var(--text-muted); text-align:right; margin-top:3px; }
+  .bubble-media { font-style:italic; color:var(--text-soft); }
+  .chat-footer { padding:10px 14px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); }
+  @media (max-width:900px) {
+    .chat-wrap { height:calc(100dvh - 110px); }
+    .chat-list { width:100%; border-right:none; }
+    .chat-wrap.thread-open .chat-list { display:none; }
+    .chat-wrap:not(.thread-open) .chat-thread { display:none; }
+    .chat-thread-head .back { display:inline-flex; }
+    .bubble { max-width:86%; }
+  }
 </style>
 </head>
 <body>
@@ -297,6 +337,7 @@
 
 <!-- ===================== APP ===================== -->
 <div id="app">
+  <div style="position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:700;background:#f59e0b;color:#1a1200;font-size:11px;font-weight:700;padding:2px 12px;border-radius:0 0 8px 8px">STAGING — test data only</div>
   <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
   <div class="sidebar" id="sidebar">
     <div class="sidebar-logo">
@@ -342,7 +383,7 @@
    login, because every table is protected by Row Level Security.
    Find it in Supabase → Settings → API → "anon" "public" key.
    ====================================================================== */
-const SUPABASE_URL = "https://upgtiqllmmrstrvmmarj.supabase.co";
+const SUPABASE_URL = "https://upgtiqllmmrstrvmmarj.supabase.co";   // STAGING PREVIEW — not production
 const SUPABASE_ANON_KEY = "sb_publishable_7xXKpmh3-ZrEkBSWESA_bQ_xcb6rtf3";
 const EDGE_FUNCTION_URL = SUPABASE_URL + "/functions/v1/admin-manage-staff";
 const EDGE_2FA_REQUEST_URL = SUPABASE_URL + "/functions/v1/staff-2fa-request";
@@ -366,10 +407,13 @@ const STAFF_ROLES = ["admin","doctor","reception","billing","marketing","front_o
 // "Front Office" = a single login combining Reception + Billing duties (a
 // stopgap for a solo staff member handling both, added 2026-09-28; see the
 // per-user permission toggles item on the roadmap for the fuller version).
+// Same roles as the wa_conversations/wa_messages RLS policies (no billing/marketing: chats can contain health details).
+const INBOX_ROLES = ["admin","doctor","reception","front_office"];
 const NAV_ITEMS = [
   { key: "home", label: "Dashboard", icon: "📊", roles: ["admin","doctor","reception","billing","front_office"] },
   { key: "patients", label: "Patients", icon: "🧑‍🤝‍🧑", roles: ["admin","doctor","reception","billing","front_office"] },
   { key: "appointments", label: "Appointments", icon: "📅", roles: ["admin","doctor","reception","front_office"] },
+  { key: "chats", label: "Chats", icon: "💬", roles: INBOX_ROLES },
   { key: "clinical", label: "Clinical Records", icon: "🩺", roles: ["admin","doctor"] },
   { key: "doctors", label: "Doctors & Services", icon: "👨‍⚕️", roles: ["admin"] },
   { key: "billing", label: "Billing & Payments", icon: "💳", roles: ["admin","doctor","reception","billing","front_office"] },
@@ -763,6 +807,8 @@ function showOtpScreen() {
 
 async function handleSignOut(reason) {
   stopIdleTimer();
+  stopInboxWatcher();
+  if (state.viewCleanup) { state.viewCleanup(); state.viewCleanup = null; }
   closeModal(); closeMobileNav();
   state.session = null; state.staff = null;
   storeDel(LAST_ACTIVE_KEY); storeDel(SIGNED_IN_AT_KEY);
@@ -816,6 +862,7 @@ function enterApp() {
   renderNav();
   navigate(NAV_ITEMS.find(n => n.roles.includes(state.staff.role))?.key || "home");
   startIdleTimer();
+  startInboxWatcher();
 }
 
 /* ---------------------------------------------------------------------
@@ -964,6 +1011,7 @@ function renderNav() {
     <div class="nav-item ${state.view===n.key?'active':''}" data-nav="${n.key}" title="${n.label}">
       <span class="nav-icon">${n.icon}</span><span class="nav-label">${n.label}</span>
     </div>`).join("");
+  updateChatsBadge();
   nav.querySelectorAll("[data-nav]").forEach(el => {
     el.addEventListener("click", () => { closeMobileNav(); navigate(el.getAttribute("data-nav")); });
   });
@@ -973,6 +1021,7 @@ const PAGE_META = {
   home: ["Dashboard", "Today at a glance"],
   patients: ["Patients", "Search, add and manage patient records"],
   appointments: ["Appointments", "Bookings synced from WhatsApp + walk-ins"],
+  chats: ["Chats", "Live WhatsApp conversations (AI + patients)"],
   clinical: ["Clinical Records", "Medical history & treatment protocols"],
   doctors: ["Doctors & Services", "Manage doctors, fees, timings, specialties and services"],
   billing: ["Billing & Payments", "Invoices and payments"],
@@ -990,6 +1039,7 @@ const PAGE_META = {
 };
 
 function navigate(view, params) {
+  if (state.viewCleanup) { state.viewCleanup(); state.viewCleanup = null; }
   state.view = view;
   state.viewParams = params || {};
   renderNav();
@@ -1238,11 +1288,25 @@ function openPatientForm(patient, onSaved) {
     } else {
       payload.dob = null;
     }
+    // 6b: a phone may belong to several family members; the database no longer rejects repeats.
+    if (!patient || patient.phone !== payload.phone) {
+      const { data: same, error: lookupErr } = await sb.from("patients").select("id,name").eq("phone", payload.phone).is("deleted_at", null);
+      if (lookupErr) { toast("Error: " + lookupErr.message, "error"); return; }
+      const others = (same || []).filter(p => !patient || p.id !== patient.id);
+      const key = s => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+      if (others.some(p => key(p.name) === key(payload.name))) {
+        toast(`${payload.name} is already registered with ${payload.phone}. Search Patients instead of adding them again.`, "error");
+        return;
+      }
+      if (others.length && !confirm(`${payload.phone} is already used by: ${others.map(p => p.name).join(", ")}.\n\nSave ${payload.name} as a family member on the same number?`)) return;
+    }
     let error;
     if (patient) ({ error } = await sb.from("patients").update(payload).eq("id", patient.id));
     else ({ error } = await sb.from("patients").insert(payload));
     if (error) {
-      if (error.message && error.message.includes("patients_phone_key")) {
+      if (error.message && error.message.includes("PHONE_CAP_REACHED")) {
+        toast(`${payload.phone} already has 6 patients registered. Contact the admin to add more.`, "error");
+      } else if (error.message && error.message.includes("patients_phone_key")) {
         toast(`A patient with the number ${payload.phone} already exists. Search Patients instead of adding a new one.`, "error");
       } else {
         toast("Error: " + error.message, "error");
@@ -3060,7 +3124,14 @@ VIEWS.data = async function(content) {
     for (const row of rows) {
       if (!row.phone) { fail++; continue; }
       const payload = { ...row, updated_at: new Date().toISOString() };
-      const { error } = await sb.from("patients").upsert(payload, { onConflict: "phone" });
+      // 6b: same phone + same name updates that patient; anything else is a new family member.
+      const { data: same, error: lookupErr } = await sb.from("patients").select("id,name").eq("phone", payload.phone).is("deleted_at", null);
+      if (lookupErr) { fail++; continue; }
+      const key = s => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+      const match = (same || []).find(p => key(p.name) === key(payload.name));
+      const { error } = match
+        ? await sb.from("patients").update(payload).eq("id", match.id)
+        : await sb.from("patients").insert(payload);
       if (error) fail++; else ok++;
     }
     resultEl.innerHTML = `Imported ${ok} row(s)${fail?`, ${fail} failed (check phone numbers / required fields)`:''}.`;
@@ -3287,6 +3358,191 @@ function openAuditDetailModal(row) {
     <div class="modal-actions"><button type="button" class="btn btn-secondary" id="closeAuditDetailBtn">Close</button></div>`, { wide: true });
   document.getElementById("closeAuditDetailBtn").addEventListener("click", closeModal);
 }
+
+/* ======================================================================
+   CHATS — shared WhatsApp inbox (step 2: read-only monitor).
+   Rows come from wa_conversations / wa_messages, written by the n8n
+   "SHC Inbox Logger" workflow; live via Supabase Realtime (RLS applies).
+   ====================================================================== */
+let inboxUnreadTotal = 0;
+let inboxWatcher = null;
+
+function updateChatsBadge() {
+  const el = document.querySelector('[data-nav="chats"]');
+  if (!el) return;
+  let b = el.querySelector(".nav-badge");
+  if (!inboxUnreadTotal) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement("span"); b.className = "nav-badge"; el.appendChild(b); }
+  b.textContent = inboxUnreadTotal > 99 ? "99+" : inboxUnreadTotal;
+}
+async function refreshInboxUnread() {
+  const { data } = await sb.from("wa_conversations").select("unread_count").gt("unread_count", 0);
+  inboxUnreadTotal = (data || []).reduce((s, r) => s + r.unread_count, 0);
+  updateChatsBadge();
+}
+function startInboxWatcher() {
+  if (!can(...INBOX_ROLES) || inboxWatcher) return;
+  refreshInboxUnread();
+  inboxWatcher = sb.channel("inbox-unread")
+    .on("postgres_changes", { event: "*", schema: "public", table: "wa_conversations" }, refreshInboxUnread)
+    .subscribe();
+}
+function stopInboxWatcher() {
+  if (inboxWatcher) { sb.removeChannel(inboxWatcher); inboxWatcher = null; }
+  inboxUnreadTotal = 0;
+}
+
+function chatDisplayName(c) {
+  return (c.patient && c.patient.name) || c.contact_name || chatPhoneLabel(c.phone);
+}
+function chatPhoneLabel(phone) {
+  const p = String(phone || "");
+  if (p.startsWith("lid:")) return "Hidden number";
+  return p.length === 12 && p.startsWith("91") ? "+91 " + p.slice(2, 7) + " " + p.slice(7) : (p ? "+" + p : "");
+}
+function chatTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts), now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-IN", d.getFullYear() === now.getFullYear()
+    ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+const CHAT_MEDIA_LABEL = { image: "📷 Photo", video: "🎥 Video", audio: "🎤 Voice note", document: "📄 Document" };
+
+VIEWS.chats = async function(content) {
+  if (!can(...INBOX_ROLES)) {
+    content.innerHTML = `<div class="panel"><p class="empty-state">You don't have access to this page.</p></div>`;
+    return;
+  }
+  content.innerHTML = `
+    <div class="chat-wrap" id="chatWrap">
+      <div class="chat-list">
+        <div class="chat-list-head">
+          <div class="search-box">🔍<input id="chatSearch" placeholder="Search name or number" autocomplete="off"></div>
+          <div class="chat-filter">
+            <button type="button" class="btn btn-secondary btn-sm active" data-chat-filter="all">All</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-chat-filter="unread">Unread</button>
+          </div>
+        </div>
+        <div class="chat-items" id="chatItems"><div class="empty-state">Loading…</div></div>
+      </div>
+      <div class="chat-thread" id="chatThread">
+        <div class="empty-state" style="margin:auto">Select a conversation to view it.</div>
+      </div>
+    </div>`;
+
+  const ui = { filter: "all", search: "", openId: state.viewParams.chatId || null };
+  let convs = [];
+
+  async function loadList() {
+    const { data, error } = await sb.from("wa_conversations")
+      .select("*, patient:patients(id,name)")
+      .order("last_message_at", { ascending: false, nullsFirst: false }).limit(300);
+    if (error) { document.getElementById("chatItems").innerHTML = `<div class="empty-state">Error: ${escapeHtml(error.message)}</div>`; return; }
+    convs = data || [];
+    renderList();
+  }
+  function renderList() {
+    const t = ui.search.trim().toLowerCase();
+    const digits = t.replace(/\D/g, "");
+    const rows = convs.filter(c =>
+      (ui.filter !== "unread" || c.unread_count > 0) &&
+      (!t || chatDisplayName(c).toLowerCase().includes(t) || (digits && String(c.phone || "").includes(digits))));
+    const box = document.getElementById("chatItems");
+    if (!box) return;
+    box.innerHTML = rows.map(c => `
+      <div class="chat-item ${c.chat_id === ui.openId ? "active" : ""}" data-chat="${escapeHtml(c.chat_id)}">
+        <div class="avatar">${escapeHtml(chatDisplayName(c).slice(0, 1).toUpperCase())}</div>
+        <div class="chat-item-main">
+          <div class="chat-item-top"><span class="chat-item-name">${escapeHtml(chatDisplayName(c))}</span><span class="chat-item-time">${chatTime(c.last_message_at)}</span></div>
+          <div class="chat-item-top"><span class="chat-item-preview">${escapeHtml(c.last_message_preview || "")}</span>${c.unread_count ? `<span class="chat-unread">${c.unread_count}</span>` : ""}</div>
+        </div>
+      </div>`).join("") || `<div class="empty-state">${convs.length ? "No matching conversations." : "No WhatsApp conversations yet."}</div>`;
+    box.querySelectorAll("[data-chat]").forEach(el => el.addEventListener("click", () => openChat(el.dataset.chat)));
+  }
+
+  // supabase-js only sends a request when awaited, so this must be awaited (or .then'd).
+  async function markChatRead(chatId) {
+    const { error } = await sb.rpc("mark_wa_read", { p_chat_id: chatId });
+    if (error) { toast("Could not mark chat as read: " + error.message, "error"); return; }
+    const c = convs.find(x => x.chat_id === chatId);
+    if (c) c.unread_count = 0;
+    renderList();
+    refreshInboxUnread();
+  }
+
+  async function openChat(chatId) {
+    ui.openId = chatId;
+    renderList();
+    document.getElementById("chatWrap").classList.add("thread-open");
+    const c = convs.find(x => x.chat_id === chatId) || { chat_id: chatId };
+    const thread = document.getElementById("chatThread");
+    thread.innerHTML = `
+      <div class="chat-thread-head">
+        <button type="button" class="icon-btn back" id="chatBackBtn" aria-label="Back to conversations">←</button>
+        <div class="avatar">${escapeHtml(chatDisplayName(c).slice(0, 1).toUpperCase())}</div>
+        <div class="chat-thread-title">
+          <div class="chat-item-name">${escapeHtml(chatDisplayName(c))}</div>
+          <div class="chat-item-preview" style="font-size:11.5px">${escapeHtml(chatPhoneLabel(c.phone))}${c.patient ? "" : " · not a registered patient"}</div>
+        </div>
+        ${c.patient ? `<button type="button" class="btn btn-secondary btn-sm" id="chatProfileBtn" title="Open patient profile">👤<span class="chat-btn-label"> Profile</span></button>` : ""}
+        <span class="badge ${c.mode === "human" ? "yellow" : "green"}" style="white-space:nowrap">${c.mode === "human" ? "Staff" : "AI"}</span>
+      </div>
+      <div class="chat-messages" id="chatMessages"><div class="empty-state">Loading…</div></div>
+      <div class="chat-footer">Monitoring only — replying from the dashboard comes in the next step.</div>`;
+    document.getElementById("chatBackBtn").addEventListener("click", () => {
+      ui.openId = null; document.getElementById("chatWrap").classList.remove("thread-open"); renderList();
+    });
+    const pb = document.getElementById("chatProfileBtn");
+    if (pb) pb.addEventListener("click", () => navigate("patientProfile", { id: c.patient.id }));
+    await loadMessages();
+    if (c.unread_count) await markChatRead(chatId);
+  }
+
+  async function loadMessages() {
+    const box = document.getElementById("chatMessages");
+    if (!box || !ui.openId) return;
+    const { data, error } = await sb.from("wa_messages").select("*")
+      .eq("chat_id", ui.openId).order("sent_at", { ascending: false }).limit(300);
+    if (error) { box.innerHTML = `<div class="empty-state">Error: ${escapeHtml(error.message)}</div>`; return; }
+    const msgs = (data || []).reverse();
+    let lastDay = "";
+    box.innerHTML = msgs.map(m => {
+      const d = new Date(m.sent_at);
+      const day = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      const sep = day !== lastDay ? `<div class="chat-day">${day}</div>` : "";
+      lastDay = day;
+      const media = m.has_media ? `<div class="bubble-media">${CHAT_MEDIA_LABEL[m.media_type] || "📎 Attachment"}</div>` : "";
+      const who = m.direction === "out" ? (m.sender_type === "staff" ? "Staff" : m.sender_type === "ai" ? "AI" : "Clinic") + " · " : "";
+      return `${sep}<div class="bubble ${m.direction === "out" ? "out" : "in"}">${media}${escapeHtml(m.body || "")}<div class="bubble-meta">${who}${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</div></div>`;
+    }).join("") || `<div class="empty-state">No messages yet.</div>`;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  content.querySelectorAll("[data-chat-filter]").forEach(b => b.addEventListener("click", () => {
+    ui.filter = b.dataset.chatFilter;
+    content.querySelectorAll("[data-chat-filter]").forEach(x => x.classList.toggle("active", x === b));
+    renderList();
+  }));
+  document.getElementById("chatSearch").addEventListener("input", e => { ui.search = e.target.value; renderList(); });
+
+  // Live: new messages and conversation changes. ponytail: refetches the list/thread on each event; fine at clinic volume.
+  const channel = sb.channel("chats-view")
+    .on("postgres_changes", { event: "*", schema: "public", table: "wa_conversations" }, () => loadList())
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_messages" }, payload => {
+      if (payload.new && payload.new.chat_id === ui.openId) {
+        loadMessages();
+        if (payload.new.direction === "in") markChatRead(ui.openId);
+      }
+    })
+    .subscribe();
+  state.viewCleanup = () => sb.removeChannel(channel);
+
+  await loadList();
+  if (ui.openId) openChat(ui.openId);
+};
 
 /* ---------------------------------------------------------------------
    INIT
