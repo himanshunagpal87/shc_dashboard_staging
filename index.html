@@ -447,12 +447,18 @@ function escapeHtml(s) {
 // typed here always matches what the bot stores - no more silent duplicate
 // patients from "91 98..." vs "9198..." vs a bare 10-digit number.
 function normalizePhone(raw) {
-  let digits = String(raw || "").replace(/\D/g, "");
+  if (/^\s*lid:/i.test(String(raw || ""))) return "lid:" + String(raw).replace(/\D/g, "");
+  let digits = String(raw || "").replace(/\D/g, "").replace(/^00/, "");
   if (digits.length === 10) return "91" + digits;
   if (digits.length === 11 && digits.startsWith("0")) return "91" + digits.slice(1);
   if (digits.length === 12 && digits.startsWith("91")) return digits;
   return digits; // anything unusual (foreign number, partial entry) - leave visible, don't guess
 }
+// Indian mobile (91 + 10 digits) or a full international number; "lid:" = WhatsApp hidden ID (patients only).
+function isValidPhone(p, allowLid) {
+  return /^91[6-9]\d{9}$/.test(p) || (/^[1-9]\d{10,14}$/.test(p) && !p.startsWith("91")) || (!!allowLid && /^lid:\d+$/.test(p));
+}
+const PHONE_FORMAT_MSG = "Enter a valid phone number: 10 digits, with an optional country code (e.g. 98765 43210 or +91 98765 43210).";
 // dd/mm/yyyy <-> ISO (yyyy-mm-dd) helpers for the DOB field. Only ISO ever
 // reaches Supabase; dd/mm/yyyy is purely the staff-facing display format.
 function isValidDMY(str) {
@@ -1280,6 +1286,8 @@ function openPatientForm(patient, onSaved) {
     payload.name = payload.name.trim().replace(/\s+/g, " ");
     payload.phone = normalizePhone(payload.phone);
     if (payload.emergency_contact_phone) payload.emergency_contact_phone = normalizePhone(payload.emergency_contact_phone);
+    if (!isValidPhone(payload.phone, true)) { toast(PHONE_FORMAT_MSG, "error"); return; }
+    if (payload.emergency_contact_phone && !isValidPhone(payload.emergency_contact_phone)) { toast("Emergency contact: " + PHONE_FORMAT_MSG, "error"); return; }
     payload.updated_at = new Date().toISOString();
     const dobVal = dobInput.value.trim();
     if (dobVal) {
@@ -1313,6 +1321,8 @@ function openPatientForm(patient, onSaved) {
     if (error) {
       if (error.message && error.message.includes("PHONE_CAP_REACHED")) {
         toast(`${payload.phone} already has 6 patients registered. Contact the admin to add more.`, "error");
+      } else if (error.message && /phone_format/.test(error.message)) {
+        toast(PHONE_FORMAT_MSG, "error");
       } else if (error.message && error.message.includes("patients_phone_key")) {
         toast(`A patient with the number ${payload.phone} already exists. Search Patients instead of adding a new one.`, "error");
       } else {
@@ -2018,7 +2028,7 @@ function openDoctorForm(doc, onSaved) {
       available_days: DAY_KEYS.filter(dk => fd.get("day_"+dk)),
       start_time: fd.get("start_time"), end_time: fd.get("end_time"),
       saturday_start_time: fd.get("saturday_start_time") || null, saturday_end_time: fd.get("saturday_end_time") || null,
-      phone: fd.get("phone") || null, email: fd.get("email") || null, bio: fd.get("bio") || null,
+      phone: fd.get("phone") ? normalizePhone(fd.get("phone")) : null, email: fd.get("email") || null, bio: fd.get("bio") || null,
       show_on_website: !!fd.get("show_on_website"),
     };
     const { error } = isEdit
@@ -3130,6 +3140,9 @@ VIEWS.data = async function(content) {
     let ok = 0, fail = 0;
     for (const row of rows) {
       if (!row.phone) { fail++; continue; }
+      row.phone = normalizePhone(row.phone);
+      if (row.emergency_contact_phone) row.emergency_contact_phone = normalizePhone(row.emergency_contact_phone);
+      if (!isValidPhone(row.phone) || (row.emergency_contact_phone && !isValidPhone(row.emergency_contact_phone))) { fail++; continue; }
       const payload = { ...row, updated_at: new Date().toISOString() };
       // 6b: same phone + same name updates that patient; anything else is a new family member.
       const { data: same, error: lookupErr } = await sb.from("patients").select("id,name").eq("phone", payload.phone).is("deleted_at", null);
