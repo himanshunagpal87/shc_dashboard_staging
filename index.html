@@ -1118,11 +1118,19 @@ VIEWS.home = async function(content) {
 function statusBadge(status) {
   const map = {
     confirmed: "green", completed: "green", cancelled: "red", declined: "red",
-    missed: "red", pending_doctor_approval: "yellow", reschedule_pending: "yellow", pending_confirmation: "yellow",
+    missed: "red", pending_doctor_approval: "yellow", reschedule_pending: "yellow", pending_confirmation: "yellow", lapsed: "red",
   };
   return `<span class="badge ${map[status]||'grey'}">${escapeHtml((status||'').replace(/_/g,' '))}</span>`;
 }
-const APPT_STATUSES = ["confirmed","completed","cancelled","declined","missed","pending_doctor_approval","reschedule_pending","pending_confirmation"];
+const APPT_STATUSES = ["confirmed","completed","cancelled","declined","missed","pending_doctor_approval","reschedule_pending","pending_confirmation","lapsed"];
+// pending requests: when the decision is due, or that front office must phone (E1b)
+function approvalInfoHtml(a) {
+  if (a.status !== "pending_doctor_approval") return "";
+  if (a.approval_urgent) return `<div class="muted" style="font-size:11px;color:var(--red)">⚠️ URGENT: too close to approve, call the patient</div>`;
+  if (!a.approval_deadline) return "";
+  const late = new Date(a.approval_deadline) < new Date();
+  return `<div class="muted" style="font-size:11px">${late ? "⌛ deadline passed" : "⏳ decide by"} ${fmtDate(a.approval_deadline)}</div>`;
+}
 const APPT_TYPES = { clinic: "Clinic", video: "Video", home: "Home Visit" };
 function apptTypeLabel(t) { return APPT_TYPES[t] || APPT_TYPES.clinic; }
 
@@ -1186,6 +1194,11 @@ function openPatientForm(patient, onSaved) {
             <option ${p.gender==='female'?'selected':''}>female</option>
             <option ${p.gender==='male'?'selected':''}>male</option>
             <option ${p.gender==='other'?'selected':''}>other</option>
+          </select>
+        </div>
+        <div class="field"><label title="Language for automatic WhatsApp messages">Message language</label>
+          <select name="preferred_language">
+            ${[["auto","Auto (from their messages)"],["hinglish","Hinglish"],["english","English"]].map(([v,l]) => `<option value="${v}" ${(p.preferred_language||'auto')===v?'selected':''}>${l}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -1715,13 +1728,14 @@ VIEWS.appointments = async function(content) {
         <td>${escapeHtml(a.doctor?.name||'—')}</td>
         <td>${escapeHtml(a.service?.name||'—')}</td>
         <td>${apptTypeLabel(a.appointment_type)}</td>
-        <td>${statusBadge(a.status)}</td>
+        <td>${statusBadge(a.status)}${approvalInfoHtml(a)}</td>
         <td>${a.google_event_id ? '<span class="badge green">Synced</span>' : '<span class="badge grey">Pending</span>'}</td>
         <td>
           <div class="flex gap-8">
             ${canManage ? `<select data-id="${a.id}" class="statusSelect">
               ${["confirmed","completed","cancelled","missed"].map(s=>`<option value="${s}" ${a.status===s?'selected':''}>${s}</option>`).join("")}
             </select>` : ``}
+            ${a.status === "pending_doctor_approval" && can("admin","doctor","front_office") ? `<button class="btn btn-primary btn-sm" data-approve="${a.id}">Approve</button><button class="btn btn-secondary btn-sm" data-decline="${a.id}">Decline</button>` : ``}
             ${canManage ? `<button class="btn btn-secondary btn-sm" data-editid="${a.id}">Edit</button>` : ``}
             ${canManage ? `<button class="btn btn-secondary btn-sm" data-msgid="${a.id}">Message</button>` : ``}
             ${can("admin") ? `<button class="btn btn-danger btn-sm" data-del-appt="${a.id}">Delete</button>` : ``}
@@ -1738,6 +1752,18 @@ VIEWS.appointments = async function(content) {
         else toast("Status updated.", "success");
       });
     });
+    // E1b: approve via approve_appointment() (doctor, admin, front office); the patient is told automatically
+    tbody.querySelectorAll("[data-approve]").forEach(btn => btn.addEventListener("click", async () => {
+      const { error } = await sb.rpc("approve_appointment", { p_id: Number(btn.dataset.approve) });
+      if (error) return toast(error.message, "error");
+      toast("Approved. The patient will get a WhatsApp confirmation.", "success"); load();
+    }));
+    tbody.querySelectorAll("[data-decline]").forEach(btn => btn.addEventListener("click", async () => {
+      if (!confirm("Decline this request? The patient will be offered other free times.")) return;
+      const { error } = await sb.from("appointments").update({ status: "declined" }).eq("id", btn.dataset.decline);
+      if (error) return toast(error.message, "error");
+      toast("Declined. The patient will be offered other times on WhatsApp.", "success"); load();
+    }));
     tbody.querySelectorAll("[data-editid]").forEach(btn => {
       btn.addEventListener("click", () => {
         const appt = (data||[]).find(x => String(x.id) === btn.dataset.editid);
