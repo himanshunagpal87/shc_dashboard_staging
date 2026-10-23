@@ -429,6 +429,7 @@ const NAV_ITEMS = [
   { key: "reports", label: "Reports", icon: "📄", roles: ["admin","doctor"] },
   { key: "analytics", label: "Analytics", icon: "📈", roles: ["admin","doctor"] },
   { key: "closures", label: "Closures & Holidays", icon: "🗓️", roles: ["admin","doctor","reception","front_office"] },
+  { key: "calls", label: "Calls", icon: "📞", roles: ["admin","doctor","reception","front_office"] },
   { key: "homeVisits", label: "Home Visits", icon: "🏠", roles: ["admin","doctor"] },
   { key: "articles", label: "Website Articles", icon: "📝", roles: ["admin","doctor","marketing"] },
   { key: "staff", label: "Staff & Users", icon: "🔑", roles: ["admin"] },
@@ -877,6 +878,23 @@ function enterApp() {
   navigate(NAV_ITEMS.find(n => n.roles.includes(state.staff.role))?.key || "home");
   startIdleTimer();
   startInboxWatcher();
+  startCallsBadgeWatcher();
+}
+
+async function refreshCallsBadge() {
+  if (!can("admin","doctor","reception","front_office")) return;
+  const { count } = await sb.from("phone_calls").select("id", { count: "exact", head: true })
+    .eq("event", "missed").eq("resolved", false);
+  const el = document.querySelector('[data-nav="calls"]');
+  if (!el) return;
+  let b = el.querySelector(".nav-badge");
+  if (!count) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement("span"); b.className = "nav-badge"; el.appendChild(b); }
+  b.textContent = count > 99 ? "99+" : count;
+}
+function startCallsBadgeWatcher() {
+  refreshCallsBadge();
+  setInterval(refreshCallsBadge, 60000);
 }
 
 /* ---------------------------------------------------------------------
@@ -1045,6 +1063,7 @@ const PAGE_META = {
   reports: ["Reports", "Patient report links"],
   analytics: ["Analytics", "Revenue, appointments, feedback and patient trends"],
   closures: ["Closures & Holidays", "Days the clinic or a doctor is closed - blocks bookings and shows a notice on the website"],
+  calls: ["Calls", "Missed calls, full call log, and auto-WhatsApp outreach"],
   homeVisits: ["Home Visits", "Phase 1: assign associates, review check-ins, approve protocol changes"],
   articles: ["Website Articles", "Write, review and schedule articles for shivwikholisticcare.com"],
   staff: ["Staff & Users", "Manage dashboard logins and roles"],
@@ -1411,6 +1430,59 @@ function openSendMessageModal(patient, appointment) {
     toast("Message queued — it will be sent via WhatsApp shortly.", "success");
   });
 }
+
+/* ======================================================================
+   CALLS (Stage D) - missed calls, call log, auto-WhatsApp outreach
+   ====================================================================== */
+function callEventLabel(c) {
+  const dur = c.duration_seconds != null ? ` (${Math.floor(c.duration_seconds/60)}m ${c.duration_seconds%60}s)` : '';
+  const labels = { missed: 'Missed', answered: 'Answered' + dur, ended_in: 'Incoming' + dur, outgoing: 'Outgoing' + dur, ended_out: 'Outgoing' + dur };
+  return labels[c.event] || c.event;
+}
+function outreachBadge(c) {
+  if (c.outreach_status === 'sent') return '<span class="badge green">WhatsApp sent</span>';
+  if (c.outreach_status === 'no_whatsapp') return '<span class="badge grey">No WhatsApp - call back</span>';
+  if (c.event !== 'missed') return '<span class="muted">—</span>';
+  return '<span class="badge yellow">Pending</span>';
+}
+VIEWS.calls = async function(content) {
+  const openOnly = state.viewParams.filter !== 'all';
+  let q = sb.from("phone_calls").select("*, patient:patients(id,name)").order("created_at",{ascending:false}).limit(200);
+  if (openOnly) q = q.eq("event","missed").eq("resolved", false);
+  const { data, error } = await q;
+  content.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">${openOnly ? 'Open Missed Calls' : 'All Calls'}</div>
+        <div><button class="btn btn-secondary btn-sm" data-calls-filter="${openOnly ? 'all' : 'open'}">${openOnly ? 'Show All Calls' : 'Show Open Missed Only'}</button></div>
+      </div>
+      <table><thead><tr><th>When</th><th>Phone / Contact</th><th>Patient</th><th>Type</th><th>Outreach</th><th>Status</th><th></th></tr></thead>
+      <tbody>${error ? `<tr><td colspan="7">Error: ${escapeHtml(error.message)}</td></tr>` :
+        (data||[]).map(c=>`<tr>
+          <td>${fmtDate(c.created_at)}</td>
+          <td>${escapeHtml(c.contact_name || c.phone || '—')}${c.phone ? ` <a href="#" data-goto-chat="${c.phone}" title="Open chat">💬</a>` : ''}</td>
+          <td>${c.patient ? `<a href="#" data-goto-patient="${c.patient.id}">${escapeHtml(c.patient.name)}</a>` : '<span class="muted">—</span>'}</td>
+          <td>${callEventLabel(c)}</td>
+          <td>${outreachBadge(c)}</td>
+          <td>${c.resolved ? `<span class="badge green">${c.called_back ? 'Called back' : 'Resolved'}</span>` : (c.event === 'missed' ? '<span class="badge red">Open</span>' : '<span class="muted">—</span>')}</td>
+          <td>${(!c.resolved && c.event === 'missed') ? `<button class="btn btn-secondary btn-sm" data-call-callback="${c.id}">Called Back</button> <button class="btn btn-secondary btn-sm" data-call-resolve="${c.id}">Resolve</button>` : ''}</td>
+        </tr>`).join("") || `<tr><td colspan="7" class="empty-state">${openOnly ? 'No open missed calls. 🎉' : 'No calls logged yet.'}</td></tr>`}
+      </tbody></table>
+    </div>`;
+  content.querySelectorAll("[data-calls-filter]").forEach(btn => btn.addEventListener("click", () => navigate("calls", { filter: btn.dataset.callsFilter })));
+  content.querySelectorAll("[data-goto-patient]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); navigate("patientProfile", { id: a.dataset.gotoPatient }); }));
+  content.querySelectorAll("[data-goto-chat]").forEach(a => a.addEventListener("click", e => { e.preventDefault(); navigate("chats", { chatId: a.dataset.gotoChat + "@c.us" }); }));
+  content.querySelectorAll("[data-call-callback]").forEach(btn => btn.addEventListener("click", async () => {
+    const { error } = await sb.from("phone_calls").update({ called_back: true, resolved: true }).eq("id", btn.dataset.callCallback);
+    if (error) return toast(error.message, "error");
+    toast("Marked as called back.", "success"); refreshCallsBadge(); navigate("calls", state.viewParams);
+  }));
+  content.querySelectorAll("[data-call-resolve]").forEach(btn => btn.addEventListener("click", async () => {
+    const { error } = await sb.from("phone_calls").update({ resolved: true }).eq("id", btn.dataset.callResolve);
+    if (error) return toast(error.message, "error");
+    toast("Marked resolved.", "success"); refreshCallsBadge(); navigate("calls", state.viewParams);
+  }));
+};
 
 /* ---------------------------------------------------------------------
    PATIENT PROFILE (tabs: overview / clinical / appointments / billing)
