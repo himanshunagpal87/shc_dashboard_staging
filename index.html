@@ -1175,7 +1175,7 @@ VIEWS.patients = async function(content) {
     if (error) { tbody.innerHTML = `<tr><td colspan="5">Error: ${escapeHtml(error.message)}</td></tr>`; return; }
     tbody.innerHTML = (data||[]).map(p => `
       <tr class="clickable" data-id="${p.id}">
-        <td>${escapeHtml(p.name||'—')}</td>
+        <td>${escapeHtml(p.name||'—')}<div class="muted" style="font-size:11px">#${p.id}</div></td>
         <td>${escapeHtml(p.phone||'—')}</td>
         <td>${escapeHtml(p.email||'—')}</td>
         <td>${fmtDate(p.last_message_at)}</td>
@@ -1492,7 +1492,7 @@ VIEWS.patientProfile = async function(content) {
   const { data: patient, error } = await sb.from("patients").select("*").eq("id", id).is("deleted_at", null).maybeSingle();
   if (error || !patient) { content.innerHTML = `<div class="panel">Patient not found.</div>`; return; }
   document.getElementById("pageTitle").textContent = patient.name || "Patient";
-  document.getElementById("pageSub").textContent = patient.phone || "";
+  document.getElementById("pageSub").textContent = "Patient ID #" + patient.id + (patient.phone ? " · " + patient.phone : "");
 
   const tabs = ["Overview", "Appointments", "Billing"];
   if (can("admin","doctor")) tabs.splice(1, 0, "Clinical");
@@ -1686,15 +1686,15 @@ VIEWS.patientProfile = async function(content) {
       const { data } = await sb.from("appointments").select("*, doctor:doctors!appointments_doctor_id_fkey(name), patient:patients(name,phone)").eq("patient_id", id).is("deleted_at", null).order("slot_time",{ascending:false});
       body.innerHTML = `
         <div class="panel">
-          <table><thead><tr><th>When</th><th>Doctor</th><th>Type</th><th>Status</th><th>Calendar</th><th></th></tr></thead>
+          <table><thead><tr><th>ID</th><th>When</th><th>Doctor</th><th>Type</th><th>Status</th><th>Calendar</th><th></th></tr></thead>
           <tbody>${(data||[]).map(a=>`<tr>
-            <td>${fmtDate(a.slot_time)}</td><td>${escapeHtml(a.doctor?.name||'—')}</td><td>${apptTypeLabel(a.appointment_type)}</td><td>${statusBadge(a.status)}</td>
+            <td>#${a.id}</td><td>${fmtDate(a.slot_time)}</td><td>${escapeHtml(a.doctor?.name||'—')}</td><td>${apptTypeLabel(a.appointment_type)}</td><td>${statusBadge(a.status)}</td>
             <td>${a.google_event_id ? '<span class="badge green">Synced</span>' : '<span class="badge grey">Pending</span>'}</td>
             <td class="flex gap-8">
               ${can("admin","doctor","reception","front_office") ? `<button class="btn btn-secondary btn-sm" data-editid="${a.id}">Edit</button>` : ``}
               ${can("admin") ? `<button class="btn btn-danger btn-sm" data-del-appt="${a.id}">Delete</button>` : ``}
             </td>
-          </tr>`).join("")||`<tr><td colspan="6" class="empty-state">No appointments yet.</td></tr>`}</tbody></table>
+          </tr>`).join("")||`<tr><td colspan="7" class="empty-state">No appointments yet.</td></tr>`}</tbody></table>
         </div>`;
       body.querySelectorAll("[data-editid]").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -1776,8 +1776,8 @@ VIEWS.appointments = async function(content) {
         </div>
         ${canManage ? `<button class="btn btn-primary btn-sm" id="addApptBtn">+ New Appointment</button>` : ``}
       </div>
-      <table><thead><tr><th>When</th><th>Patient</th><th>Doctor</th><th>Service</th><th>Type</th><th>Status</th><th>Calendar</th><th></th></tr></thead>
-      <tbody id="apptTbody"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody></table>
+      <table><thead><tr><th>ID</th><th>When</th><th>Patient</th><th>Doctor</th><th>Service</th><th>Type</th><th>Status</th><th>Calendar</th><th></th></tr></thead>
+      <tbody id="apptTbody"><tr><td colspan="9" class="empty-state">Loading…</td></tr></tbody></table>
     </div>`;
   wirePatientCombobox(content, patientsForFilter||[]);
 
@@ -1792,11 +1792,12 @@ VIEWS.appointments = async function(content) {
     if (filters.dateTo) q = q.lte("slot_time", new Date(filters.dateTo + "T23:59:59.999").toISOString());
     const { data, error } = await q;
     const tbody = document.getElementById("apptTbody");
-    if (error) { tbody.innerHTML = `<tr><td colspan="8">Error: ${escapeHtml(error.message)}</td></tr>`; return; }
+    if (error) { tbody.innerHTML = `<tr><td colspan="9">Error: ${escapeHtml(error.message)}</td></tr>`; return; }
     tbody.innerHTML = (data||[]).map(a => `
       <tr>
+        <td>#${a.id}</td>
         <td>${fmtDate(a.slot_time)}</td>
-        <td>${escapeHtml(a.patient?.name||'—')}<div class="muted" style="font-size:11px">${escapeHtml(a.patient?.phone||'')}</div></td>
+        <td>${escapeHtml(a.patient?.name||'—')}<div class="muted" style="font-size:11px">#${a.patient_id} · ${escapeHtml(a.patient?.phone||'')}</div></td>
         <td>${escapeHtml(a.doctor?.name||'—')}</td>
         <td>${escapeHtml(a.service?.name||'—')}</td>
         <td>${apptTypeLabel(a.appointment_type)}</td>
@@ -1813,7 +1814,7 @@ VIEWS.appointments = async function(content) {
             ${can("admin") ? `<button class="btn btn-danger btn-sm" data-del-appt="${a.id}">Delete</button>` : ``}
           </div>
         </td>
-      </tr>`).join("") || `<tr><td colspan="8" class="empty-state">No appointments found.</td></tr>`;
+      </tr>`).join("") || `<tr><td colspan="9" class="empty-state">No appointments found.</td></tr>`;
     tbody.querySelectorAll(".statusSelect").forEach(sel => {
       sel.addEventListener("change", async () => {
         const payload = { status: sel.value };
