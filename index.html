@@ -429,6 +429,7 @@ const NAV_ITEMS = [
   { key: "reports", label: "Reports", icon: "📄", roles: ["admin","doctor"] },
   { key: "analytics", label: "Analytics", icon: "📈", roles: ["admin","doctor"] },
   { key: "closures", label: "Closures & Holidays", icon: "🗓️", roles: ["admin","doctor","reception","front_office"] },
+  { key: "vendors", label: "Vendors", icon: "📇", roles: ["admin","doctor","reception","front_office"] },
   { key: "calls", label: "Calls", icon: "📞", roles: ["admin","doctor","reception","front_office"] },
   { key: "homeVisits", label: "Home Visits", icon: "🏠", roles: ["admin","doctor"] },
   { key: "articles", label: "Website Articles", icon: "📝", roles: ["admin","doctor","marketing"] },
@@ -1063,6 +1064,7 @@ const PAGE_META = {
   reports: ["Reports", "Patient report links"],
   analytics: ["Analytics", "Revenue, appointments, feedback and patient trends"],
   closures: ["Closures & Holidays", "Days the clinic or a doctor is closed - blocks bookings and shows a notice on the website"],
+  vendors: ["Vendors", "Vendor contacts - synced to the \"SHC Vendors\" label in Google Contacts"],
   calls: ["Calls", "Missed calls, full call log, and auto-WhatsApp outreach"],
   homeVisits: ["Home Visits", "Phase 1: assign associates, review check-ins, approve protocol changes"],
   articles: ["Website Articles", "Write, review and schedule articles for shivwikholisticcare.com"],
@@ -1481,6 +1483,98 @@ VIEWS.calls = async function(content) {
     const { error } = await sb.from("phone_calls").update({ resolved: true }).eq("id", btn.dataset.callResolve);
     if (error) return toast(error.message, "error");
     toast("Marked resolved.", "success"); refreshCallsBadge(); navigate("calls", state.viewParams);
+  }));
+};
+
+/* ======================================================================
+   VENDORS (Stage D4) - dashboard-managed list, synced to Google Contacts
+   ====================================================================== */
+VIEWS.vendors = async function(content) {
+  const { data, error } = await sb.from("vendors").select("*").order("active", { ascending: false }).order("name");
+  content.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Vendors</div>
+        <div><button class="btn btn-primary btn-sm" data-vendor-add>+ Add Vendor</button></div>
+      </div>
+      <div id="vendorAddForm" style="display:none" class="panel" >
+        <div class="flex gap-8" style="flex-wrap:wrap">
+          <input id="vendorName" placeholder="Name" />
+          <input id="vendorPhone" placeholder="Phone" />
+          <input id="vendorCategory" placeholder="Category" />
+          <input id="vendorNotes" placeholder="Notes" />
+          <button class="btn btn-primary btn-sm" data-vendor-save>Save</button>
+          <button class="btn btn-secondary btn-sm" data-vendor-cancel>Cancel</button>
+        </div>
+      </div>
+      <table><thead><tr><th>Name</th><th>Phone</th><th>Category</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+      <tbody>${error ? `<tr><td colspan="6">Error: ${escapeHtml(error.message)}</td></tr>` :
+        (data||[]).map(v=>`<tr data-vendor-row="${v.id}">
+          <td>${escapeHtml(v.name)}</td>
+          <td>${escapeHtml(v.phone||'—')}</td>
+          <td>${escapeHtml(v.category||'—')}</td>
+          <td>${escapeHtml(v.notes||'—')}</td>
+          <td>${v.active ? '<span class="badge green">Active</span>' : '<span class="badge grey">Inactive</span>'}</td>
+          <td class="flex gap-8">
+            <button class="btn btn-secondary btn-sm" data-vendor-edit="${v.id}">Edit</button>
+            <button class="btn btn-secondary btn-sm" data-vendor-toggle="${v.id}" data-vendor-active="${v.active}">${v.active ? 'Deactivate' : 'Reactivate'}</button>
+          </td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty-state">No vendors yet.</td></tr>`}
+      </tbody></table>
+    </div>`;
+  content.querySelector("[data-vendor-add]").addEventListener("click", () => {
+    document.getElementById("vendorAddForm").style.display = "";
+  });
+  content.querySelector("[data-vendor-cancel]").addEventListener("click", () => navigate("vendors"));
+  content.querySelector("[data-vendor-save]").addEventListener("click", async () => {
+    const name = document.getElementById("vendorName").value.trim();
+    if (!name) return toast("Name is required.", "error");
+    const { error } = await sb.from("vendors").insert({
+      name,
+      phone: document.getElementById("vendorPhone").value.trim() || null,
+      category: document.getElementById("vendorCategory").value.trim() || null,
+      notes: document.getElementById("vendorNotes").value.trim() || null,
+    });
+    if (error) return toast(error.message, "error");
+    toast("Vendor added.", "success");
+    navigate("vendors");
+  });
+  content.querySelectorAll("[data-vendor-toggle]").forEach(btn => btn.addEventListener("click", async () => {
+    const nowActive = btn.dataset.vendorActive === "true";
+    const { error } = await sb.from("vendors").update({ active: !nowActive }).eq("id", btn.dataset.vendorToggle);
+    if (error) return toast(error.message, "error");
+    toast(nowActive ? "Vendor deactivated." : "Vendor reactivated.", "success");
+    navigate("vendors");
+  }));
+  content.querySelectorAll("[data-vendor-edit]").forEach(btn => btn.addEventListener("click", async () => {
+    const id = btn.dataset.vendorEdit;
+    const row = content.querySelector(`tr[data-vendor-row="${id}"]`);
+    const v = (data||[]).find(x => String(x.id) === String(id));
+    if (!v || !row) return;
+    row.innerHTML = `
+      <td><input class="vendor-edit-name" value="${escapeHtml(v.name)}" /></td>
+      <td><input class="vendor-edit-phone" value="${escapeHtml(v.phone||'')}" /></td>
+      <td><input class="vendor-edit-category" value="${escapeHtml(v.category||'')}" /></td>
+      <td><input class="vendor-edit-notes" value="${escapeHtml(v.notes||'')}" /></td>
+      <td>${v.active ? '<span class="badge green">Active</span>' : '<span class="badge grey">Inactive</span>'}</td>
+      <td class="flex gap-8">
+        <button class="btn btn-primary btn-sm" data-vendor-edit-save="${id}">Save</button>
+        <button class="btn btn-secondary btn-sm" data-vendor-edit-cancel>Cancel</button>
+      </td>`;
+    row.querySelector("[data-vendor-edit-cancel]").addEventListener("click", () => navigate("vendors"));
+    row.querySelector("[data-vendor-edit-save]").addEventListener("click", async () => {
+      const name = row.querySelector(".vendor-edit-name").value.trim();
+      if (!name) return toast("Name is required.", "error");
+      const { error } = await sb.from("vendors").update({
+        name,
+        phone: row.querySelector(".vendor-edit-phone").value.trim() || null,
+        category: row.querySelector(".vendor-edit-category").value.trim() || null,
+        notes: row.querySelector(".vendor-edit-notes").value.trim() || null,
+      }).eq("id", id);
+      if (error) return toast(error.message, "error");
+      toast("Vendor updated.", "success");
+      navigate("vendors");
+    });
   }));
 };
 
