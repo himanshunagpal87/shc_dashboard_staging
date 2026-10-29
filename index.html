@@ -2206,7 +2206,7 @@ async function openDoctorForm(doc, onSaved) {
       <div class="field mb-8"><label>Bio</label><textarea name="bio" rows="3">${escapeHtml(doc?.bio||'')}</textarea></div>
       <div class="field mb-8"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" name="show_on_website" ${doc?.show_on_website===false?'':'checked'} style="width:auto"> Show on website (name, qualification, specialty, bio and schedule only &mdash; never phone, email or fee)</label></div>
       <div class="modal-actions"><button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button><button type="submit" class="btn btn-primary">${isEdit?'Save Changes':'Add Doctor'}</button></div>
-    </form>`);
+    </form>`, { wide: true });
   document.getElementById("cancelBtn").addEventListener("click", closeModal);
   document.getElementById("doctorForm").addEventListener("submit", async e => {
     e.preventDefault();
@@ -2226,7 +2226,8 @@ async function openDoctorForm(doc, onSaved) {
     if (error) return toast(error.message, "error");
     const ttErr = await saveTimetable(saved[0].id, tt.rows);   // also refreshes the website hours (database trigger)
     if (ttErr) return toast("Doctor saved, but the timetable was not: " + ttErr.message, "error");
-    closeModal(); toast(isEdit ? "Doctor updated." : "Doctor added.", "success"); onSaved && onSaved();
+    const ttText = WEEKDAYS.filter(([, wd]) => tt.rows.some(r => r.weekday === wd)).map(([lbl, wd]) => lbl + " " + tt.rows.filter(r => r.weekday === wd).map(r => r.start_time.slice(0,5) + "-" + r.end_time.slice(0,5) + (r.approval_required ? " (approval)" : "")).join(" + ")).join(", ");
+    closeModal(); toast((isEdit ? "Saved. " : "Doctor added. ") + "Open slots: " + (ttText || "none") + ". Any other time needs approval.", "success"); onSaved && onSaved();
   });
 }
 
@@ -2288,13 +2289,13 @@ function timetableGridHtml(rows) {
   const cell = (wd, s) => {
     const r = get(wd, s), d = SESSION_DEFAULTS[s];
     return `<td><label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" style="width:auto" name="tt_on_${wd}_${s}" ${r?'checked':''}> open</label></td>
-      <td><input type="time" name="tt_start_${wd}_${s}" value="${(r?.start_time||d[0]).slice(0,5)}" style="min-width:92px"></td>
-      <td><input type="time" name="tt_end_${wd}_${s}" value="${(r?.end_time||d[1]).slice(0,5)}" style="min-width:92px"></td>
+      <td><input type="time" name="tt_start_${wd}_${s}" value="${(r?.start_time||d[0]).slice(0,5)}" style="min-width:0;width:100%;padding:6px"></td>
+      <td><input type="time" name="tt_end_${wd}_${s}" value="${(r?.end_time||d[1]).slice(0,5)}" style="min-width:0;width:100%;padding:6px"></td>
       <td><label style="font-size:12px;display:flex;align-items:center;gap:4px" title="Bookings in this slot need the doctor's approval"><input type="checkbox" style="width:auto" name="tt_appr_${wd}_${s}" ${r ? (r.approval_required?'checked':'') : (s==='evening'?'checked':'')}> approval</label></td>`;
   };
   return `<div class="field mb-8"><label>Weekly timetable *</label>
     <div class="field-hint mb-8">Bookings inside an open slot are confirmed directly. Any other time, or a slot marked "approval", goes to the doctor for approval (WhatsApp, website and front office alike). Doctor and admin entries are always approved.</div>
-    <div style="overflow-x:auto"><table class="tt-grid"><thead><tr><th>Day</th><th colspan="4">Morning</th><th colspan="4">Evening</th></tr></thead><tbody>
+    <div style="overflow-x:auto"><table class="tt-grid" style="width:100%;table-layout:fixed;font-size:12px"><thead><tr><th>Day</th><th colspan="4">Morning</th><th colspan="4">Evening</th></tr></thead><tbody>
     ${WEEKDAYS.map(([lbl, wd]) => `<tr><td><b>${lbl}</b></td>${cell(wd,'morning')}${cell(wd,'evening')}</tr>`).join("")}
     </tbody></table></div></div>`;
 }
@@ -3379,8 +3380,8 @@ VIEWS.staff = async function(content) {
   content.innerHTML = `
     <div class="panel">
       <div class="panel-head"><div class="panel-title">Team Members</div><button class="btn btn-primary btn-sm" id="addStaffBtn">+ Add Staff</button></div>
-      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>2FA</th><th></th></tr></thead>
-      <tbody id="staffTbody"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody></table>
+      <table><thead><tr><th>Name</th><th>Email</th><th>WhatsApp</th><th>Role</th><th>Status</th><th>2FA</th><th></th></tr></thead>
+      <tbody id="staffTbody"><tr><td colspan="7" class="empty-state">Loading…</td></tr></tbody></table>
     </div>`;
   async function load() {
     const { data, error } = await sb.from("staff").select("*").order("created_at");
@@ -3390,6 +3391,7 @@ VIEWS.staff = async function(content) {
       <tr>
         <td>${escapeHtml(s.name)}</td>
         <td>${escapeHtml(s.email)}</td>
+        <td style="white-space:nowrap">${escapeHtml(s.phone || "—")} <button class="btn btn-secondary btn-sm" data-phone-edit="${s.id}" data-current="${escapeHtml(s.phone||'')}" title="WhatsApp number for 2FA codes and approval alerts">✎</button></td>
         <td>
           <select data-role="${s.id}" ${s.id===state.staff.id?'disabled':''}>
             ${STAFF_ROLES.map(r=>`<option value="${r}" ${s.role===r?'selected':''}>${ROLE_LABELS[r]}</option>`).join("")}
@@ -3423,6 +3425,15 @@ VIEWS.staff = async function(content) {
     }));
     // Works for the admin's own row too, on purpose - an admin must be able
     // to turn WhatsApp OTP 2FA on for their own login, not just for others.
+    tbody.querySelectorAll("[data-phone-edit]").forEach(btn => btn.addEventListener("click", async () => {
+      const entered = prompt("WhatsApp number (10 digits, optional country code). Leave empty to remove:", btn.dataset.current || "");
+      if (entered === null) return;
+      const value = entered.trim() ? normalizePhone(entered.trim()) : "";
+      if (value && !isValidPhone(value)) return toast(PHONE_FORMAT_MSG, "error");
+      const { error } = await sb.rpc("set_staff_phone", { p_id: btn.dataset.phoneEdit, p_phone: value });
+      if (error) return toast(error.message, "error");
+      toast(value ? "WhatsApp number saved." : "WhatsApp number removed.", "success"); load();
+    }));
     tbody.querySelectorAll("[data-twofa]").forEach(cb => cb.addEventListener("change", async () => {
       const id = cb.dataset.twofa;
       if (cb.checked) {
