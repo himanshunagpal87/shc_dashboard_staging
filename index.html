@@ -430,6 +430,7 @@ const NAV_ITEMS = [
   { key: "analytics", label: "Analytics", icon: "📈", roles: ["admin","doctor"] },
   { key: "closures", label: "Closures & Holidays", icon: "🗓️", roles: ["admin","doctor","reception","front_office"] },
   { key: "vendors", label: "Vendors", icon: "📇", roles: ["admin","doctor","reception","front_office"] },
+  { key: "leads", label: "Leads", icon: "📥", roles: ["admin","doctor","reception","front_office"] },
   { key: "calls", label: "Calls", icon: "📞", roles: ["admin","doctor","reception","front_office"] },
   { key: "homeVisits", label: "Home Visits", icon: "🏠", roles: ["admin","doctor"] },
   { key: "articles", label: "Website Articles", icon: "📝", roles: ["admin","doctor","marketing"] },
@@ -1065,6 +1066,7 @@ const PAGE_META = {
   analytics: ["Analytics", "Revenue, appointments, feedback and patient trends"],
   closures: ["Closures & Holidays", "Days the clinic or a doctor is closed - blocks bookings and shows a notice on the website"],
   vendors: ["Vendors", "Vendor contacts - synced to the \"SHC Vendors\" label in Google Contacts"],
+  leads: ["Leads", "Non-patient WhatsApp contacts (vendors, job applicants, misc) flagged by the AI for follow-up"],
   calls: ["Calls", "Missed calls, full call log, and auto-WhatsApp outreach"],
   homeVisits: ["Home Visits", "Phase 1: assign associates, review check-ins, approve protocol changes"],
   articles: ["Website Articles", "Write, review and schedule articles for shivwikholisticcare.com"],
@@ -1489,6 +1491,112 @@ VIEWS.calls = async function(content) {
 /* ======================================================================
    VENDORS (Stage D4) - dashboard-managed list, synced to Google Contacts
    ====================================================================== */
+const LEAD_KIND_LABELS = { vendor: "Vendor", prospective_vendor: "Prospective Vendor", job_applicant: "Job Applicant", misc: "Misc" };
+VIEWS.leads = async function(content) {
+  const { data, error } = await sb.from("leads").select("*").order("status").order("created_at", { ascending: false });
+  content.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">Leads</div></div>
+      <table><thead><tr><th>Name</th><th>Phone</th><th>Category</th><th>Note</th><th>Status</th><th></th></tr></thead>
+      <tbody>${error ? `<tr><td colspan="6">Error: ${escapeHtml(error.message)}</td></tr>` :
+        (data||[]).map(l=>`<tr>
+          <td>${escapeHtml(l.name||'—')}</td>
+          <td>${escapeHtml(l.phone)}</td>
+          <td>${escapeHtml(LEAD_KIND_LABELS[l.kind]||l.kind)}</td>
+          <td>${escapeHtml(l.note||'—')}</td>
+          <td>${l.status === 'closed' ? '<span class="badge grey">Closed</span>' : l.status === 'contacted' ? '<span class="badge yellow">Contacted</span>' : '<span class="badge green">New</span>'}</td>
+          <td class="flex gap-8">
+            ${l.status === 'new' ? `<button class="btn btn-secondary btn-sm" data-lead-contacted="${l.id}">Mark Contacted</button>` : ``}
+            ${l.status !== 'closed' ? `<button class="btn btn-secondary btn-sm" data-lead-close="${l.id}">Close</button>` : `<button class="btn btn-secondary btn-sm" data-lead-reopen="${l.id}">Reopen</button>`}
+          </td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty-state">No leads yet.</td></tr>`}
+      </tbody></table>
+    </div>`;
+  async function setStatus(id, status) {
+    const { error } = await sb.from("leads").update({ status }).eq("id", id);
+    if (error) return toast(error.message, "error");
+    navigate("leads");
+  }
+  content.querySelectorAll("[data-lead-contacted]").forEach(btn => btn.addEventListener("click", () => setStatus(btn.dataset.leadContacted, "contacted")));
+  content.querySelectorAll("[data-lead-close]").forEach(btn => btn.addEventListener("click", () => setStatus(btn.dataset.leadClose, "closed")));
+  content.querySelectorAll("[data-lead-reopen]").forEach(btn => btn.addEventListener("click", () => setStatus(btn.dataset.leadReopen, "new")));
+};
+function openConvertPatientToVendor(patient) {
+  const allowTransfer = can("admin");
+  openModal(`Convert / Copy to Vendor${patient.name ? " — " + escapeHtml(patient.name) : ""}`, `
+    <div class="field mb-8"><label>Name</label><input id="cvName" value="${escapeHtml(patient.name||'')}" /></div>
+    <div class="field mb-8"><label>Phone</label><input id="cvPhone" value="${escapeHtml(patient.phone||'')}" /></div>
+    <div class="field mb-8"><label>Category</label><input id="cvCategory" placeholder="e.g. Equipment, Supplies" /></div>
+    <div class="field mb-8"><label>Notes</label><input id="cvNotes" value="${escapeHtml(patient.notes||'')}" /></div>
+    <div class="field-hint mb-8">Copy keeps this patient record as-is. ${allowTransfer ? "Transfer also moves this patient to Trash (restorable for 7 days)." : "Only an admin can transfer (archive) the patient record — Copy is still available."}</div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+      <button type="button" class="btn btn-secondary" id="copyToVendorBtn">Copy</button>
+      ${allowTransfer ? `<button type="button" class="btn btn-primary" id="transferToVendorBtn">Transfer</button>` : ``}
+    </div>`);
+  document.getElementById("cancelBtn").addEventListener("click", closeModal);
+  async function insertVendor() {
+    const name = document.getElementById("cvName").value.trim();
+    if (!name) { toast("Name is required.", "error"); return false; }
+    const { error } = await sb.from("vendors").insert({
+      name,
+      phone: document.getElementById("cvPhone").value.trim() || null,
+      category: document.getElementById("cvCategory").value.trim() || null,
+      notes: document.getElementById("cvNotes").value.trim() || null,
+    });
+    if (error) { toast(error.message, "error"); return false; }
+    return true;
+  }
+  document.getElementById("copyToVendorBtn").addEventListener("click", async () => {
+    if (!(await insertVendor())) return;
+    closeModal();
+    toast("Copied to Vendors.", "success");
+  });
+  const transferBtn = document.getElementById("transferToVendorBtn");
+  if (transferBtn) transferBtn.addEventListener("click", async () => {
+    if (!(await insertVendor())) return;
+    closeModal();
+    confirmSoftDelete("patients", patient.id, "Patient", () => navigate("patients"));
+  });
+}
+function openConvertVendorToPatient(vendor) {
+  openModal(`Convert / Copy to Patient${vendor.name ? " — " + escapeHtml(vendor.name) : ""}`, `
+    <div class="field mb-8"><label>Name</label><input id="cpName" value="${escapeHtml(vendor.name||'')}" /></div>
+    <div class="field mb-8"><label>Phone</label><input id="cpPhone" value="${escapeHtml(vendor.phone||'')}" /></div>
+    <div class="field mb-8"><label>Notes</label><input id="cpNotes" value="${escapeHtml(vendor.notes||'')}" /></div>
+    <div class="field-hint mb-8">Copy keeps this vendor record as-is. Transfer also deactivates this vendor.</div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+      <button type="button" class="btn btn-secondary" id="copyToPatientBtn">Copy</button>
+      <button type="button" class="btn btn-primary" id="transferToPatientBtn">Transfer</button>
+    </div>`);
+  document.getElementById("cancelBtn").addEventListener("click", closeModal);
+  async function insertPatient() {
+    const name = document.getElementById("cpName").value.trim();
+    const phone = document.getElementById("cpPhone").value.trim();
+    if (!name || !phone) { toast("Name and phone are required.", "error"); return false; }
+    const { error } = await sb.from("patients").insert({
+      name,
+      phone,
+      notes: document.getElementById("cpNotes").value.trim() || null,
+    });
+    if (error) { toast(error.message, "error"); return false; }
+    return true;
+  }
+  document.getElementById("copyToPatientBtn").addEventListener("click", async () => {
+    if (!(await insertPatient())) return;
+    closeModal();
+    toast("Copied to Patients.", "success");
+  });
+  document.getElementById("transferToPatientBtn").addEventListener("click", async () => {
+    if (!(await insertPatient())) return;
+    const { error } = await sb.from("vendors").update({ active: false }).eq("id", vendor.id);
+    if (error) { toast(error.message, "error"); return; }
+    closeModal();
+    toast("Transferred to Patients; vendor deactivated.", "success");
+    navigate("vendors");
+  });
+}
 VIEWS.vendors = async function(content) {
   const { data, error } = await sb.from("vendors").select("*").order("active", { ascending: false }).order("name");
   content.innerHTML = `
@@ -1518,6 +1626,7 @@ VIEWS.vendors = async function(content) {
           <td class="flex gap-8">
             <button class="btn btn-secondary btn-sm" data-vendor-edit="${v.id}">Edit</button>
             <button class="btn btn-secondary btn-sm" data-vendor-toggle="${v.id}" data-vendor-active="${v.active}">${v.active ? 'Deactivate' : 'Reactivate'}</button>
+            <button class="btn btn-secondary btn-sm" data-vendor-to-patient="${v.id}">To Patient…</button>
           </td>
         </tr>`).join("") || `<tr><td colspan="6" class="empty-state">No vendors yet.</td></tr>`}
       </tbody></table>
@@ -1545,6 +1654,10 @@ VIEWS.vendors = async function(content) {
     if (error) return toast(error.message, "error");
     toast(nowActive ? "Vendor deactivated." : "Vendor reactivated.", "success");
     navigate("vendors");
+  }));
+  content.querySelectorAll("[data-vendor-to-patient]").forEach(btn => btn.addEventListener("click", () => {
+    const v = (data||[]).find(x => String(x.id) === String(btn.dataset.vendorToPatient));
+    if (v) openConvertVendorToPatient(v);
   }));
   content.querySelectorAll("[data-vendor-edit]").forEach(btn => btn.addEventListener("click", async () => {
     const id = btn.dataset.vendorEdit;
@@ -1609,6 +1722,7 @@ VIEWS.patientProfile = async function(content) {
             <div class="flex gap-8">
               ${can("admin","doctor","reception","front_office") ? `<button class="btn btn-secondary btn-sm" id="sendMsgFromProfileBtn">Send Message</button>` : ``}
               ${can("admin","doctor","reception","front_office") ? `<button class="btn btn-secondary btn-sm" id="editPatientBtn">Edit</button>` : ``}
+              ${can("admin","doctor","reception","front_office") ? `<button class="btn btn-secondary btn-sm" id="convertToVendorBtn">To Vendor…</button>` : ``}
               ${can("admin") ? `<button class="btn btn-secondary btn-sm" id="mergePatientBtn" title="Merge a duplicate record into this patient">Merge…</button>` : ``}
               ${can("admin") ? `<button class="btn btn-danger btn-sm" id="deletePatientBtn">Delete</button>` : ``}
             </div>
@@ -1624,6 +1738,8 @@ VIEWS.patientProfile = async function(content) {
         </div>`;
       const editBtn = document.getElementById("editPatientBtn");
       if (editBtn) editBtn.addEventListener("click", () => openPatientForm(patient, () => navigate("patientProfile", { id })));
+      const convertBtn = document.getElementById("convertToVendorBtn");
+      if (convertBtn) convertBtn.addEventListener("click", () => openConvertPatientToVendor(patient));
       const mergeBtn = document.getElementById("mergePatientBtn");
       if (mergeBtn) mergeBtn.addEventListener("click", () => openManualMerge(Number(id)));
       const sendMsgBtn = document.getElementById("sendMsgFromProfileBtn");
