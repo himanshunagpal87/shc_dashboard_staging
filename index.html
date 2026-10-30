@@ -822,6 +822,11 @@ function showOtpScreen() {
   codeInput.focus();
 }
 
+function clearLoginForm() {
+  const f = document.getElementById("loginForm");
+  [0, 400, 1200].forEach(ms => setTimeout(() => { if (!f.contains(document.activeElement)) f.reset(); }, ms));
+}
+
 async function handleSignOut(reason) {
   stopIdleTimer();
   stopInboxWatcher();
@@ -830,7 +835,7 @@ async function handleSignOut(reason) {
   state.session = null; state.staff = null;
   storeDel(LAST_ACTIVE_KEY); storeDel(SIGNED_IN_AT_KEY);
   document.getElementById("app").style.display = "none";
-  document.getElementById("loginScreen").style.display = "flex";
+  document.getElementById("loginScreen").style.display = "flex"; clearLoginForm();
   document.getElementById("loginError").textContent =
     reason === "idle" ? "You were signed out after 15 minutes of inactivity, to protect patient data." :
     reason === "max" ? "Your session ended after 12 hours. Please sign in again." : "";
@@ -1017,7 +1022,7 @@ async function bootstrapSession() {
     const reason = sessionExpiredReason();
     await sb.auth.signOut();
     storeDel(LAST_ACTIVE_KEY); storeDel(SIGNED_IN_AT_KEY);
-    document.getElementById("loginScreen").style.display = "flex";
+    document.getElementById("loginScreen").style.display = "flex"; clearLoginForm();
     document.getElementById("loginError").textContent = reason === "max"
       ? "Your session ended after 12 hours. Please sign in again."
       : "You were signed out after 15 minutes of inactivity, to protect patient data.";
@@ -1033,7 +1038,7 @@ async function bootstrapSession() {
       }
     } catch (e) { /* fall through to login */ }
   }
-  document.getElementById("loginScreen").style.display = "flex";
+  document.getElementById("loginScreen").style.display = "flex"; clearLoginForm();
 }
 
 /* ---------------------------------------------------------------------
@@ -4114,7 +4119,7 @@ document.getElementById("otpCancelLink").addEventListener("click", async e => {
   e.preventDefault();
   state.session = null; state.staff = null;
   document.getElementById("otpScreen").style.display = "none";
-  document.getElementById("loginScreen").style.display = "flex";
+  document.getElementById("loginScreen").style.display = "flex"; clearLoginForm();
   document.getElementById("loginError").textContent = "";
   await sb.auth.signOut();
 });
