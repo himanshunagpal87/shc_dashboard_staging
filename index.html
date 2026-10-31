@@ -1578,8 +1578,10 @@ function openConvertVendorToPatient(vendor) {
   document.getElementById("cancelBtn").addEventListener("click", closeModal);
   async function insertPatient() {
     const name = document.getElementById("cpName").value.trim();
-    const phone = document.getElementById("cpPhone").value.trim();
+    let phone = document.getElementById("cpPhone").value.trim();
     if (!name || !phone) { toast("Name and phone are required.", "error"); return false; }
+    phone = normalizePhone(phone);
+    if (!isValidPhone(phone, true)) { toast(PHONE_FORMAT_MSG, "error"); return false; }
     const { error } = await sb.from("patients").insert({
       name,
       phone,
